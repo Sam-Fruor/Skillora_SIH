@@ -1,26 +1,263 @@
+@keyframes atom-orbit-behind {
+  0% {
+    transform: rotate(0deg) translateX(0) translateY(-3vw);
+  }
+  100% {
+    transform: rotate(360deg) translateX(0) translateY(-3vw);
+  }
+}
+.animate-atom-orbit-behind {
+  animation: atom-orbit-behind 7s cubic-bezier(0.77,0,0.18,1) infinite;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+  z-index: 0;
+}
+@keyframes atom-horizontal-move {
+  0% {
+    left: 0%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+.animate-atom-horizontal-move {
+  animation: atom-horizontal-move 4s linear infinite;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+@keyframes atom-wave-orbit {
+  0% {
+    transform: rotate(0deg) translateX(0) translateY(-3vw) scale(1);
+  }
+  10% {
+    transform: rotate(36deg) translateX(0) translateY(-3.5vw) scale(1.04);
+  }
+  20% {
+    transform: rotate(72deg) translateX(0) translateY(-3vw) scale(1.08);
+  }
+  30% {
+    transform: rotate(108deg) translateX(0) translateY(-2.5vw) scale(1.04);
+  }
+  40% {
+    transform: rotate(144deg) translateX(0) translateY(-3vw) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) translateX(0) translateY(-3.5vw) scale(1.04);
+  }
+  60% {
+    transform: rotate(216deg) translateX(0) translateY(-3vw) scale(1.08);
+  }
+  70% {
+    transform: rotate(252deg) translateX(0) translateY(-2.5vw) scale(1.04);
+  }
+  80% {
+    transform: rotate(288deg) translateX(0) translateY(-3vw) scale(1);
+  }
+  90% {
+    transform: rotate(324deg) translateX(0) translateY(-3.5vw) scale(1.04);
+  }
+  100% {
+    transform: rotate(360deg) translateX(0) translateY(-3vw) scale(1);
+  }
+}
+.animate-atom-wave-orbit {
+  animation: atom-wave-orbit 7s cubic-bezier(0.77,0,0.18,1) infinite;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+  z-index: 20;
+  will-change: transform;
+  filter: drop-shadow(0 8px 24px #12417088) drop-shadow(0 2px 8px #67C09088);
+}
+@keyframes wave-orbit {
+  0% {
+    left: 0%;
+    top: 10%;
+    transform: translate(0, 0) scale(1);
+  }
+  10% {
+    left: 10%;
+    top: 5%;
+    transform: scale(1.08);
+  }
+  20% {
+    left: 20%;
+    top: 0%;
+    transform: scale(1.12);
+  }
+  30% {
+    left: 30%;
+    top: 5%;
+    transform: scale(1.08);
+  }
+  40% {
+    left: 40%;
+    top: 10%;
+    transform: scale(1);
+  }
+  50% {
+    left: 50%;
+    top: 15%;
+    transform: scale(1.08);
+  }
+  60% {
+    left: 60%;
+    top: 10%;
+    transform: scale(1.12);
+  }
+  70% {
+    left: 70%;
+    top: 5%;
+    transform: scale(1.08);
+  }
+  80% {
+    left: 80%;
+    top: 0%;
+    transform: scale(1);
+  }
+  90% {
+    left: 90%;
+    top: 5%;
+    transform: scale(1.08);
+  }
+  100% {
+    left: 100%;
+    top: 10%;
+    transform: scale(1);
+  }
+}
+.animate-wave-orbit {
+  animation: wave-orbit 7s cubic-bezier(0.77,0,0.18,1) infinite;
+  position: absolute;
+  z-index: 20;
+  filter: drop-shadow(0 8px 24px #12417088) drop-shadow(0 2px 8px #67C09088);
+}
+
+@keyframes sound-wave {
+  0% {
+    left: 100%;
+    transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+  }
+  25% {
+    left: 75%;
+    transform: translateX(0) translateY(-10%) rotate(-3deg) scale(1.04);
+  }
+  50% {
+    left: 50%;
+    transform: translateX(0) translateY(0%) rotate(0deg) scale(1.08);
+  }
+  75% {
+    left: 25%;
+    transform: translateX(0) translateY(10%) rotate(3deg) scale(1.04);
+  }
+  100% {
+    left: 0%;
+    transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+  }
+}
+.animate-sound-wave {
+  animation: sound-wave 7s linear infinite alternate;
+  position: absolute;
+  top: 0%;
+  z-index: 30; /* ensure above title */
+  will-change: left, transform;
+  filter: drop-shadow(0 10px 30px rgba(18,65,112,0.25));
+}
+@keyframes atom-orbit {
+  0% {
+    transform: rotate(0deg) translateY(-120px) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateY(-120px) rotate(-360deg);
+  }
+}
+.animate-atom-orbit {
+  animation: atom-orbit 7s linear infinite;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-30px); }
+}
+.animate-float { animation: float 4s ease-in-out infinite; }
+@keyframes blob1 {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  33% { transform: scale(1.1, 0.9) translate(20px, -10px); }
+  66% { transform: scale(0.9, 1.1) translate(-10px, 20px); }
+}
+@keyframes blob2 {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  33% { transform: scale(1.05, 0.95) translate(-15px, 10px); }
+  66% { transform: scale(0.95, 1.05) translate(10px, -15px); }
+}
+@keyframes blob3 {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  33% { transform: scale(1.08, 0.92) translate(10px, 15px); }
+  66% { transform: scale(0.92, 1.08) translate(-15px, -10px); }
+}
+@keyframes blob4 {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  33% { transform: scale(1.12, 0.88) translate(-20px, 10px); }
+  66% { transform: scale(0.88, 1.12) translate(10px, -20px); }
+}
+.animate-blob1 { animation: blob1 12s ease-in-out infinite; }
+.animate-blob2 { animation: blob2 14s ease-in-out infinite; }
+.animate-blob3 { animation: blob3 16s ease-in-out infinite; }
+.animate-blob4 { animation: blob4 18s ease-in-out infinite; }
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #DDF4E7;
+  --foreground: #124170;
+  --primary: #67C090;
+  --secondary: #26667F;
+  --accent: #124170;
+  --surface: #ffffff;
+  --brand1: #DDF4E7;
+  --brand2: #67C090;
+  --brand3: #26667F;
+  --brand4: #124170;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
-}
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Utility classes for new color palette */
+.bg-brand1 { background-color: #DDF4E7 !important; }
+.bg-brand2 { background-color: #67C090 !important; }
+.bg-brand3 { background-color: #26667F !important; }
+.bg-brand4 { background-color: #124170 !important; }
+.text-brand1 { color: #DDF4E7 !important; }
+.text-brand2 { color: #67C090 !important; }
+.text-brand3 { color: #26667F !important; }
+.text-brand4 { color: #124170 !important; }
+}
+/* Element Category Colors */
+.diatomic-nonmetal { background-color: #a1ffc8; }
+.polyatomic-nonmetal { background-color: #a1ffc8; }
+.noble-gas { background-color: #ffbdfb; }
+.alkali-metal { background-color: #ffc480; }
+.alkaline-earth-metal { background-color: #ffff80; }
+.metalloid { background-color: #b3d5a4; }
+.post-transition-metal { background-color: #d1e0e0; }
+.transition-metal { background-color: #ffc0c0; }
+.lanthanide { background-color: #c0ffff; }
+.actinide { background-color: #d8bff8; }
+.unknown { background-color: #e8e8e8; }
