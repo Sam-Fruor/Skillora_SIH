@@ -2,247 +2,434 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// --- Main Game Component ---
 export default function MelodySculptorGame() {
-    const mountRef = useRef(null);
+    const containerRef = useRef(null);
     const [activeInstrument, setActiveInstrument] = useState('synth');
     const [isPlaying, setIsPlaying] = useState(false);
 
+    // Refs to hold our Three.js objects so they persist across renders
+    // without needing to be in React state (which causes re-renders)
+    const gameRefs = useRef({
+        scene: null,
+        camera: null,
+        renderer: null,
+        controls: null,
+        raycaster: null,
+        pointer: null,
+        musicalPlane: null,
+        wandGroup: null,
+        particlesMesh: null,
+        soundNodes: [],
+        soundBuffers: {},
+        audioContext: null,
+        frameId: null,
+        clock: null
+    });
+
     useEffect(() => {
-        // Dynamically load the necessary libraries
-        const threeScript = document.createElement('script');
-        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-        document.body.appendChild(threeScript);
-
-        const toneScript = document.createElement('script');
-        toneScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js';
-        document.body.appendChild(toneScript);
-
-        let scene, camera, renderer, playheadWand, synths, soundNodes = [];
-        let isDragging = false, lastMouseClickTime = 0, previousMousePosition = { x: 0, y: 0 };
-        let cameraRadius = 25, cameraAngleX = 0.6, cameraAngleY = 0.5;
-
-        const init = () => {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0a1a);
-            scene.fog = new THREE.Fog(0x0a0a1a, 20, 60);
-
-            camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
-            updateCameraPosition();
-            
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            mountRef.current.appendChild(renderer.domElement);
-            
-            // --- NEW VISUALS: Lighting ---
-            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const directionalLight = new THREE.DirectionalLight(0x87ceeb, 1);
-            directionalLight.position.set(5, 10, 7.5);
-            scene.add(directionalLight);
-
-            // --- NEW VISUALS: Musical Plane ---
-            const textureLoader = new THREE.TextureLoader();
-            const groundTexture = textureLoader.load('https://i.imgur.com/vB1d2a2.png'); // Nebula texture
-            groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
-            groundTexture.repeat.set(5, 5);
-            const groundMaterial = new THREE.MeshStandardMaterial({ map: groundTexture, transparent: true, opacity: 0.6 });
-            const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), groundMaterial);
-            groundMesh.rotation.x = -Math.PI / 2;
-            scene.add(groundMesh);
-
-            // --- NEW VISUALS: Playhead Wand ---
-            playheadWand = new THREE.Group();
-            const staffGeo = new THREE.CylinderGeometry(0.1, 0.15, 20, 8);
-            const staffMat = new THREE.MeshBasicMaterial({ color: 0x9999ff, transparent: true, opacity: 0.5 });
-            const staff = new THREE.Mesh(staffGeo, staffMat);
-            const gemGeo = new THREE.IcosahedronGeometry(0.5, 0);
-            const gemMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 1 });
-            const gem = new THREE.Mesh(gemGeo, gemMat);
-            gem.position.y = 10.2;
-            playheadWand.add(staff);
-            playheadWand.add(gem);
-            playheadWand.position.x = -10;
-            scene.add(playheadWand);
-
-            // --- SOUND SETUP ---
-            synths = {
-                synth: new Tone.Synth({ oscillator: { type: 'fatsawtooth' } }).toDestination(),
-                pluck: new Tone.PluckSynth().toDestination(),
-                kick: new Tone.MembraneSynth({ octaves: 4, pitchDecay: 0.1 }).toDestination(),
-            };
-
-            // Event Listeners
-            renderer.domElement.addEventListener('mousedown', onMouseDown);
-            renderer.domElement.addEventListener('mousemove', onMouseMove);
-            renderer.domElement.addEventListener('mouseup', onMouseUp);
-            renderer.domElement.addEventListener('wheel', onMouseWheel);
-            window.addEventListener('resize', onWindowResize);
-
-            animate();
+        // --- LOAD EXTERNAL LIBRARIES DYNAMICALLY ---
+        const loadScript = (src) => {
+            return new Promise((resolve, reject) => {
+                if (document.querySelector(`script[src="${src}"]`)) {
+                    resolve(); // Script already exists
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                script.onload = () => resolve();
+                script.onerror = () => reject(new Error(`Failed to load script ${src}`));
+                document.body.appendChild(script);
+            });
         };
 
-        const onWindowResize = () => {
-            if(!mountRef.current) return;
-            camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-        };
-        
-        const updateCameraPosition = () => {
-             camera.position.x = cameraRadius * Math.sin(cameraAngleY) * Math.cos(cameraAngleX);
-             camera.position.y = cameraRadius * Math.sin(cameraAngleX);
-             camera.position.z = cameraRadius * Math.cos(cameraAngleY) * Math.cos(cameraAngleX);
-             camera.lookAt(new THREE.Vector3(0, 0, 0));
-        };
+        const initGame = async () => {
+            try {
+                // 1. Load Three.js
+                if (!window.THREE) {
+                    await loadScript('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js');
+                }
 
-        const onMouseDown = (e) => {
-            isDragging = false;
-            lastMouseClickTime = Date.now();
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        };
-        const onMouseUp = (e) => {
-            if (!isDragging) {
-                onClick(e); // Register as click if mouse didn't drag
+                // 2. Load OrbitControls
+                // Note: This CDN version attaches to window.THREE automatically if THREE exists
+                if (!window.THREE.OrbitControls) {
+                    await loadScript('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js').catch(() => {
+                         // If direct import fails (module issue), we might need a fallback or different CDN
+                         // But usually unpkg/three works if main THREE is global.
+                         // Since the example used modules, let's stick to the previous working strategy
+                         // or just assume THREE is global now.
+                    });
+                }
+                
+                // 3. Load Tone.js
+                if (!window.Tone) {
+                   await loadScript('https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js');
+                }
+                
+                startGame();
+
+            } catch (error) {
+                console.error("Failed to load game scripts:", error);
             }
         };
-        const onMouseMove = (e) => {
-            if (Date.now() - lastMouseClickTime < 100) return; // Drag threshold
-            isDragging = true;
-            const deltaX = e.clientX - previousMousePosition.x;
-            const deltaY = e.clientY - previousMousePosition.y;
-            cameraAngleY -= deltaX * 0.005;
-            cameraAngleX += deltaY * 0.005;
-            cameraAngleX = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, cameraAngleX));
-            updateCameraPosition();
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        };
-        const onMouseWheel = (e) => { cameraRadius += e.deltaY * 0.01; cameraRadius = Math.max(5, Math.min(50, cameraRadius)); updateCameraPosition(); };
-        
-        const onClick = (e) => {
-             const mouse = new THREE.Vector2();
-             const rect = renderer.domElement.getBoundingClientRect();
-             mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-             mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-             const raycaster = new THREE.Raycaster();
-             raycaster.setFromCamera(mouse, camera);
+        initGame();
 
-             const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-             const intersectPoint = new THREE.Vector3();
-             if (raycaster.ray.intersectPlane(plane, intersectPoint)) {
-                let geometry, material;
-                const size = 0.5;
-                // --- NEW VISUALS: Unique geometry for each instrument ---
-                switch(activeInstrument) {
-                    case 'pluck': 
-                        geometry = new THREE.ConeGeometry(size * 0.8, size * 1.5, 4); // Pyramid
-                        material = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.3 });
-                        break;
-                    case 'kick':
-                        geometry = new THREE.BoxGeometry(size, size, size);
-                        material = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0xff0055, emissiveIntensity: 0.3 });
-                        break;
-                    default:
-                        geometry = new THREE.SphereGeometry(size * 0.8, 16, 16);
-                        material = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 0.3 });
+        function startGame() {
+            const THREE = window.THREE;
+            const refs = gameRefs.current;
+
+            if (!THREE) return;
+
+            // --- AUDIO SETUP ---
+            refs.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            const loadSound = (name, url) => {
+                const request = new XMLHttpRequest();
+                request.open('GET', url, true);
+                request.responseType = 'arraybuffer';
+                request.onload = () => {
+                    refs.audioContext.decodeAudioData(request.response, (buffer) => {
+                        refs.soundBuffers[name] = buffer;
+                    });
+                };
+                request.send();
+            };
+            
+            loadSound('synth', 'https://cdn.jsdelivr.net/gh/k-next/sount-test@master/2.wav');
+            loadSound('pluck', 'https://cdn.jsdelivr.net/gh/k-next/sount-test@master/1.wav');
+            loadSound('kick', 'https://cdn.jsdelivr.net/gh/k-next/sount-test@master/3.wav');
+
+            // --- INIT CORE OBJECTS ---
+            // Now it is safe to create these because THREE is definitely loaded
+            refs.raycaster = new THREE.Raycaster();
+            refs.pointer = new THREE.Vector2();
+            refs.clock = new THREE.Clock();
+
+            // --- SCENE SETUP ---
+            refs.scene = new THREE.Scene();
+            refs.scene.fog = new THREE.FogExp2(0x0a0a2a, 0.02);
+            
+            refs.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            refs.camera.position.set(0, 15, 40);
+
+            refs.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            refs.renderer.setSize(window.innerWidth, window.innerHeight);
+            refs.renderer.setPixelRatio(window.devicePixelRatio);
+            refs.renderer.shadowMap.enabled = true;
+            
+            if (containerRef.current) {
+                containerRef.current.innerHTML = '';
+                containerRef.current.appendChild(refs.renderer.domElement);
+            }
+
+            // --- CONTROLS ---
+            // Try to find OrbitControls. If loaded via module, it might not be on window.THREE.
+            // This block attempts to find it or instantiate a basic fallback if missing.
+            try {
+                // Check if OrbitControls is globally available or attached to THREE
+                const OrbitControls = window.THREE.OrbitControls || window.OrbitControls;
+                if (OrbitControls) {
+                    refs.controls = new OrbitControls(refs.camera, refs.renderer.domElement);
+                    refs.controls.enableDamping = true;
+                    refs.controls.dampingFactor = 0.05;
+                    refs.controls.maxPolarAngle = Math.PI / 2.1;
+                    refs.controls.minDistance = 5;
+                    refs.controls.maxDistance = 200;
                 }
-                const nodeMesh = new THREE.Mesh(geometry, material);
-                nodeMesh.position.copy(intersectPoint);
-                scene.add(nodeMesh);
-                soundNodes.push({ mesh: nodeMesh, instrument: activeInstrument, triggered: false, time: Date.now() });
-             }
-        };
+            } catch (e) {
+                console.warn("OrbitControls not loaded", e);
+            }
 
-        let lastPlayheadPosition = -10;
-        const animate = () => {
-            requestAnimationFrame(animate);
-            if (!renderer || !scene || !camera) return;
+            // --- LIGHTING ---
+            const ambientLight = new THREE.AmbientLight(0x404080, 1);
+            refs.scene.add(ambientLight);
 
-            if (isPlaying) {
-                playheadWand.position.x += 0.05;
-                if (playheadWand.position.x > 10) {
-                    playheadWand.position.x = -10;
-                    soundNodes.forEach(node => node.triggered = false);
+            // --- OBJECTS ---
+            const planeSize = 200;
+            const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize * 2);
+            const planeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x101028,
+                metalness: 0.8,
+                roughness: 0.4,
+            });
+            refs.musicalPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+            refs.musicalPlane.rotation.x = -Math.PI / 2;
+            refs.musicalPlane.receiveShadow = true;
+            refs.scene.add(refs.musicalPlane);
+
+            const particlesGeometry = new THREE.BufferGeometry();
+            const particlesCount = 5000;
+            const posArray = new Float32Array(particlesCount * 3);
+            for (let i = 0; i < particlesCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 300;
+            }
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const particlesMaterial = new THREE.PointsMaterial({ size: 0.1, color: 0x87CEEB });
+            refs.particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+            refs.scene.add(refs.particlesMesh);
+
+            refs.wandGroup = new THREE.Group();
+            const staffGeometry = new THREE.CylinderGeometry(0.2, 0.2, 40, 8);
+            const staffMaterial = new THREE.MeshBasicMaterial({ color: 0x00BFFF, transparent: true, opacity: 0.4 });
+            const staff = new THREE.Mesh(staffGeometry, staffMaterial);
+            staff.position.y = 20;
+
+            const gemGeometry = new THREE.SphereGeometry(1.5, 16, 16);
+            const gemMaterial = new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.8 });
+            const gem = new THREE.Mesh(gemGeometry, gemMaterial);
+            gem.position.y = 40;
+
+            const wandLight = new THREE.PointLight(0x00FFFF, 20, 50);
+            wandLight.position.y = 40;
+            wandLight.castShadow = true;
+            refs.wandGroup.add(staff, gem, wandLight);
+            refs.wandGroup.position.x = -planeSize / 2;
+            refs.scene.add(refs.wandGroup);
+
+            // Start loop
+            animate();
+
+            // Events
+            refs.renderer.domElement.addEventListener('click', onCanvasClick);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onCanvasClick(event) {
+            const refs = gameRefs.current;
+            const THREE = window.THREE;
+            
+            if (refs.audioContext && refs.audioContext.state === 'suspended') { 
+                refs.audioContext.resume(); 
+            }
+            
+            if (!refs.camera || !refs.musicalPlane) return;
+
+            refs.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            refs.pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            
+            refs.raycaster.setFromCamera(refs.pointer, refs.camera);
+            const intersects = refs.raycaster.intersectObject(refs.musicalPlane);
+
+            if (intersects.length > 0) {
+                placeInstrument(intersects[0].point);
+            }
+        }
+
+        function placeInstrument(position) {
+            const refs = gameRefs.current;
+            const THREE = window.THREE;
+            
+            // Read current instrument from DOM classes to avoid state closure issues in this effect
+            let currentType = 'synth';
+            if (document.getElementById('pluck-btn')?.classList.contains('active')) currentType = 'pluck';
+            if (document.getElementById('kick-btn')?.classList.contains('active')) currentType = 'kick';
+
+            const synthGeo = new THREE.TorusKnotGeometry(1, 0.3, 100, 16);
+            const synthMat = new THREE.MeshStandardMaterial({ color: 0x00BFFF, metalness: 0.9, roughness: 0.2, emissive: 0x005f7f });
+            const pluckGeo = new THREE.ConeGeometry(1.5, 2, 4);
+            const pluckMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.7, roughness: 0.3, emissive: 0x996515 });
+            const kickGeo = new THREE.BoxGeometry(2, 2, 2);
+            const kickMat = new THREE.MeshStandardMaterial({ color: 0xDC143C, metalness: 0.4, roughness: 0.8, emissive: 0x8B0000 });
+
+            let newNode;
+            switch (currentType) {
+                case 'synth': newNode = new THREE.Mesh(synthGeo, synthMat); break;
+                case 'pluck': newNode = new THREE.Mesh(pluckGeo, pluckMat); break;
+                case 'kick': newNode = new THREE.Mesh(kickGeo, kickMat); break;
+            }
+            newNode.position.copy(position);
+            newNode.position.y += 1;
+            newNode.castShadow = true;
+            newNode.userData.type = currentType;
+            newNode.userData.originalEmissive = newNode.material.emissive.getHex();
+            newNode.userData.hasBeenTriggered = false;
+            
+            refs.scene.add(newNode);
+            refs.soundNodes.push(newNode);
+        }
+
+        function playSound(buffer) {
+            const refs = gameRefs.current;
+            if (!buffer || !refs.audioContext) return; 
+            const source = refs.audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(refs.audioContext.destination);
+            source.start(0);
+        }
+
+        function animate() {
+            const refs = gameRefs.current;
+            const THREE = window.THREE;
+            
+            refs.frameId = requestAnimationFrame(animate);
+            
+            if (!refs.clock || !refs.scene || !refs.camera || !refs.renderer) return;
+
+            const elapsedTime = refs.clock.getElapsedTime();
+            
+            if(refs.controls && typeof refs.controls.update === 'function') {
+                refs.controls.update();
+            }
+            
+            if(refs.particlesMesh) refs.particlesMesh.rotation.y = elapsedTime * 0.05;
+
+            // Check play state from DOM to bypass React closure staleness
+            const isGamePlaying = document.getElementById('play-stop-btn')?.classList.contains('stop');
+
+            refs.soundNodes.forEach(node => {
+                if (node.userData.type === 'synth' || node.userData.type === 'pluck') { node.rotation.y += 0.01; }
+                // Flash effect logic
+                if (node.material.emissive.getHex() !== node.userData.originalEmissive) { 
+                    node.material.emissive.lerp(new THREE.Color(node.userData.originalEmissive), 0.1); 
+                }
+                if (node.userData.type === 'kick' && node.scale.x > 1) { 
+                    node.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1); 
+                }
+            });
+
+            if (isGamePlaying && refs.wandGroup) {
+                const planeSize = 200;
+                refs.wandGroup.position.x += 0.5; 
+                
+                if (refs.wandGroup.position.x > planeSize / 2) {
+                    refs.wandGroup.position.x = -planeSize / 2;
+                    refs.soundNodes.forEach(node => node.userData.hasBeenTriggered = false);
                 }
 
-                soundNodes.forEach(node => {
-                    // --- NEW VISUALS: Animation loops ---
-                    if(node.instrument === 'pluck') node.mesh.rotation.y += 0.02;
-                    if(node.instrument === 'kick' && node.isPulsing) {
-                        const elapsed = (Date.now() - node.pulseTime) / 150;
-                        const scale = elapsed < 1 ? 1 + 0.5 * Math.sin(elapsed * Math.PI) : 1;
-                        node.mesh.scale.set(scale, scale, scale);
-                        if(elapsed >= 1) node.isPulsing = false;
-                    }
-
-                    if (!node.triggered && lastPlayheadPosition < node.mesh.position.x && playheadWand.position.x >= node.mesh.position.x) {
-                        const pitches = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-                        const pitchIndex = Math.floor(node.mesh.position.y) % 7;
-                        const octave = Math.floor(node.mesh.position.y / 7) + 3;
-                        const pitch = pitches[pitchIndex] + octave;
-                        
-                        const volume = -25 + (node.mesh.position.z + 10) * 2;
-                        
-                        if (node.instrument === 'kick') {
-                            synths.kick.triggerAttackRelease('C1', '8n');
-                            node.isPulsing = true;
-                            node.pulseTime = Date.now();
-                        } else {
-                            synths[node.instrument].triggerAttackRelease(pitch, '8n', Tone.now(), volume);
-                        }
-                        node.triggered = true;
+                refs.soundNodes.forEach(node => {
+                    if (!node.userData.hasBeenTriggered && Math.abs(node.position.x - refs.wandGroup.position.x) < 1.0) {
+                        node.userData.hasBeenTriggered = true;
+                        node.material.emissive.set(0xffffff);
+                        if (node.userData.type === 'kick') { node.scale.set(1.2, 1.2, 1.2); }
+                        playSound(refs.soundBuffers[node.userData.type]);
                     }
                 });
-                lastPlayheadPosition = playheadWand.position.x;
             }
-            renderer.render(scene, camera);
-        };
-        
-        threeScript.onload = () => {
-            toneScript.onload = () => {
-                if (mountRef.current && mountRef.current.children.length === 0) {
-                    init();
-                }
+
+            refs.renderer.render(refs.scene, refs.camera);
+        }
+
+        function onWindowResize() {
+            const refs = gameRefs.current;
+            if(refs.camera && refs.renderer) {
+                refs.camera.aspect = window.innerWidth / window.innerHeight;
+                refs.camera.updateProjectionMatrix();
+                refs.renderer.setSize(window.innerWidth, window.innerHeight);
             }
-        };
+        }
 
         return () => {
+            const refs = gameRefs.current;
+            if (refs.frameId) cancelAnimationFrame(refs.frameId);
             window.removeEventListener('resize', onWindowResize);
-            if(renderer && mountRef.current) {
-                 mountRef.current.removeChild(renderer.domElement);
+            if (refs.renderer && refs.renderer.domElement) {
+                refs.renderer.domElement.removeEventListener('click', onCanvasClick);
             }
-            document.body.removeChild(threeScript);
-            document.body.removeChild(toneScript);
         };
     }, []);
 
-    const handlePlayClick = () => {
-        // --- SOUND FIX: Start audio context on user interaction ---
-        if (window.Tone && window.Tone.context.state !== 'running') {
-            window.Tone.start();
-        }
+    const toggleInstrument = (inst) => {
+        setActiveInstrument(inst);
+    };
+
+    const togglePlay = () => {
         setIsPlaying(!isPlaying);
+        // Reset wand if stopping? Optional design choice.
+        // Ideally reset wandGroup.position.x here if (!isPlaying), but 
+        // we need access to refs.wandGroup which is inside the effect.
+        // For now, just pausing the movement is sufficient UX.
     };
 
     return (
-        <div className="w-full h-screen bg-black flex flex-col">
-            <div className="p-4 bg-gray-900/80 text-white flex justify-between items-center z-10">
-                <div>
-                    <h2 className="text-2xl font-bold text-sky-400">Melody Sculptor</h2>
-                    <p className="text-gray-400">Click to place a sound. Drag to orbit. Scroll to zoom.</p>
+        <div className="w-full h-screen overflow-hidden bg-[#020210] font-sans text-white relative">
+            <style jsx>{`
+                #control-panel {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    padding: 15px 30px;
+                    box-sizing: border-box;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+                    z-index: 10;
+                    pointer-events: none;
+                }
+                #control-panel > * {
+                    pointer-events: auto;
+                }
+                #title-container {
+                    text-shadow: 0 0 10px rgba(0, 191, 255, 0.7);
+                }
+                h1 { margin: 0; font-size: 2em; }
+                p { margin: 0; font-size: 0.9em; color: #b0c4de; }
+                #button-container { display: flex; align-items: center; gap: 20px; }
+                .instrument-btn, #play-stop-btn {
+                    padding: 10px 20px;
+                    font-size: 1em;
+                    font-weight: bold;
+                    border: 2px solid #fff;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s ease-in-out;
+                    background-color: rgba(20, 20, 40, 0.8);
+                    color: #fff;
+                }
+                .instrument-btn:hover, #play-stop-btn:hover { transform: translateY(-2px); }
+                #synth-btn { border-color: #00BFFF; }
+                #pluck-btn { border-color: #FFA500; }
+                #kick-btn  { border-color: #DC143C; }
+                
+                .instrument-btn.active { color: #000; }
+                #synth-btn.active { background-color: #00BFFF; box-shadow: 0 0 15px #00BFFF; }
+                #pluck-btn.active { background-color: #FFA500; box-shadow: 0 0 15px #FFA500; }
+                #kick-btn.active  { background-color: #DC143C; box-shadow: 0 0 15px #DC143C; }
+                
+                .play-state { background-color: #2E8B57; border-color: #3CB371; box-shadow: 0 0 15px #3CB371; }
+                .stop-state { background-color: #B22222; border-color: #DC143C; box-shadow: 0 0 15px #DC143C; }
+            `}</style>
+
+            <div id="control-panel">
+                <div id="title-container">
+                    <h1>Melody Sculptor</h1>
+                    <p>Click to place, Drag to orbit, Scroll to zoom</p>
                 </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex gap-2">
-                        <button onClick={() => setActiveInstrument('synth')} className={`px-3 py-2 rounded ${activeInstrument === 'synth' ? 'bg-blue-500' : 'bg-gray-700'}`}>Synth (Sphere)</button>
-                        <button onClick={() => setActiveInstrument('pluck')} className={`px-3 py-2 rounded ${activeInstrument === 'pluck' ? 'bg-orange-500' : 'bg-gray-700'}`}>Pluck (Pyramid)</button>
-                        <button onClick={() => setActiveInstrument('kick')} className={`px-3 py-2 rounded ${activeInstrument === 'kick' ? 'bg-red-500' : 'bg-gray-700'}`}>Kick (Cube)</button>
-                    </div>
-                    <button onClick={handlePlayClick} className={`px-4 py-2 rounded w-24 ${isPlaying ? 'bg-red-600' : 'bg-green-600'}`}>{isPlaying ? 'Stop' : 'Play'}</button>
+                <div id="button-container">
+                    <button 
+                        id="synth-btn" 
+                        className={`instrument-btn ${activeInstrument === 'synth' ? 'active' : ''}`}
+                        onClick={() => toggleInstrument('synth')}
+                    >
+                        Synth
+                    </button>
+                    <button 
+                        id="pluck-btn" 
+                        className={`instrument-btn ${activeInstrument === 'pluck' ? 'active' : ''}`}
+                        onClick={() => toggleInstrument('pluck')}
+                    >
+                        Pluck
+                    </button>
+                    <button 
+                        id="kick-btn" 
+                        className={`instrument-btn ${activeInstrument === 'kick' ? 'active' : ''}`}
+                        onClick={() => toggleInstrument('kick')}
+                    >
+                        Kick
+                    </button>
+                    <button 
+                        id="play-stop-btn" 
+                        className={isPlaying ? 'stop-state stop' : 'play-state play'} 
+                        onClick={togglePlay}
+                    >
+                        {isPlaying ? 'Stop' : 'Play'}
+                    </button>
                 </div>
             </div>
-            <div ref={mountRef} className="flex-grow w-full h-full" />
+
+            <div ref={containerRef} className="w-full h-full absolute top-0 left-0 z-0" />
         </div>
     );
 }
-
